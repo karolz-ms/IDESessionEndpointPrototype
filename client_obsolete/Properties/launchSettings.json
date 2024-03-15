@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "VsSessionClient": {
+      "commandName": "Project",
+      "commandLineArgs": "--server localhost:5213"
+    }
+  }
+}
