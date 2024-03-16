@@ -2,9 +2,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Security.Cryptography
-
-
+using System.Security.Cryptography;
 using System.Linq;
 using System.Net.WebSockets;
 using System.Text.Json;
@@ -13,6 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Text;
 using System.IO;
+using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace VsSessionServer;
 
@@ -32,12 +31,12 @@ public class Server
     private Random random = new Random();
     private List<RunSessionSubscription> subscriptions = new List<RunSessionSubscription>();
     private readonly bool encryptSensitivePayloads;
-    private readonly Aes aes;
+    private readonly Aes? aes;
 
     public Server(bool encryptSensitivePayloads = false)
     {
         this.encryptSensitivePayloads = encryptSensitivePayloads;
-        if (encryptSensitivePayloads)
+        if (this.encryptSensitivePayloads)
         {
             this.aes = Aes.Create();
             Console.WriteLine($"Using AES encryption with key {Convert.ToBase64String(this.aes.Key)}");
@@ -51,11 +50,11 @@ public class Server
         }
     };
 
-    public async Task<IResult> SessionPut(HttpContext context)
+    public async Task<Results<Created<string>, ProblemHttpResult>> SessionPut(HttpContext context)
     {
         if (!context.Request.HasJsonContentType())
         {
-            return Results.Problem("Request must have application/json content type", null, StatusCodes.Status415UnsupportedMediaType);
+            return TypedResults.Problem("Request must have application/json content type", null, StatusCodes.Status415UnsupportedMediaType);
         }
 
         byte[] payload;
@@ -64,12 +63,12 @@ public class Server
             var encryptedPayload = JsonSerializer.Deserialize<EncryptedPayload>(context.Request.BodyReader.AsStream(), jsonSerializerOpts);
             if (encryptedPayload is null)
             {
-                return Results.Problem("Request body could not be deserialized", null, StatusCodes.Status400BadRequest);
+                return TypedResults.Problem("Request body could not be deserialized", null, StatusCodes.Status400BadRequest);
             }
             
             var ciphertext = Convert.FromBase64String(encryptedPayload.Ciphertext);
             var iv = Convert.FromBase64String(encryptedPayload.InitializationVector);
-            payload = this.aes.DecryptCbc(ciphertext, iv, PaddingMode.PKCS7);
+            payload = this.aes!.DecryptCbc(ciphertext, iv, PaddingMode.PKCS7);
         } else
         {
             var ms = new MemoryStream();
@@ -80,7 +79,7 @@ public class Server
         var sr = JsonSerializer.Deserialize<VsSessionRequest>(payload, jsonSerializerOpts);
         if (sr is null)
         {
-            return Results.Problem("Request body could not be deserialized", null, StatusCodes.Status400BadRequest);
+            return TypedResults.Problem("Request body could not be deserialized", null, StatusCodes.Status400BadRequest);
         }
 
         string sessionId = NewSessionId();
@@ -92,7 +91,7 @@ public class Server
         };
         if (!this.sessions.TryAdd(sessionId, rss))
         {
-            return Results.Problem("Session could not be created", null, StatusCodes.Status500InternalServerError);
+            return TypedResults.Problem("Session could not be created", null, StatusCodes.Status500InternalServerError);
         }
 
         Console.WriteLine($"Started session {sessionId} from request {sr.ToString()}");
@@ -117,7 +116,7 @@ public class Server
         });
 
 
-        return Results.Created((context.Request.Path + $"/{sessionId}").ToString(), "Session created");
+        return TypedResults.Created((context.Request.Path + $"/{sessionId}").ToString(), "Session created");
     }
 
     public async Task SessionNotify(HttpContext context)
@@ -206,7 +205,7 @@ public class Server
         return UpdateSubscribersAsync(sln);
     }
 
-    private async Task UpdateSubscribersAsync(VsSessionNotification change)
+    private async Task UpdateSubscribersAsync<CT>(CT change) where CT : VsSessionNotification
     {
         // Iterating backwards to allow removing subscriptions for clients that are no longer listening.
         // The other code in the Server only adds subscriptions, so once we get the Count here,
@@ -222,7 +221,7 @@ public class Server
             RunSessionSubscription s = this.subscriptions[i];
             try
             {
-                var payload = JsonSerializer.SerializeToUtf8Bytes(change, jsonSerializerOpts);
+                var payload = JsonSerializer.SerializeToUtf8Bytes<CT>(change, jsonSerializerOpts);
                 await s.Socket.SendAsync(payload, WebSocketMessageType.Text, WebSocketMessageFlags.EndOfMessage, CancellationToken.None);
             } 
             catch

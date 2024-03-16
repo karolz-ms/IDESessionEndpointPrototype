@@ -16,7 +16,7 @@ public class VsSessionNotification
 {
     [Required]
     [JsonPropertyName("notification_type")]
-    public virtual string NotificationType { get; set; }
+    public virtual string? NotificationType { get; set; }
 
     [JsonPropertyName("session_id")]
     public string SessionId { get; set; } = string.Empty;
@@ -50,7 +50,7 @@ public class  ServiceLogsNotification : VsSessionNotification
     public bool IsStdErr { get; set; }
 
     [JsonPropertyName("log_message")]
-    public string LogMessage { get; set; }
+    public string LogMessage { get; set; } = string.Empty;
 }
 
 public class EnvVar
@@ -124,14 +124,14 @@ public class EncryptedPayload
     /// </summary>
     [Required]
     [JsonPropertyName("ciphertext")]
-    public string Ciphertext { get; set; }
+    public string Ciphertext { get; set; } = string.Empty;
 
     /// <summary>
     /// The base64-encoded initialization vector for the encryption algorithm.
     /// </summary>
     [Required]
     [JsonPropertyName("iv")]
-    public string InitializationVector { get; set; }
+    public string InitializationVector { get; set; } = string.Empty;
 }
 
 

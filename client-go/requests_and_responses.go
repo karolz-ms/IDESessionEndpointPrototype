@@ -17,6 +17,11 @@ type ideSessionNotificationBase struct {
 	SessionID        string           `json:"session_id,omitempty"`
 }
 
+func (snb *ideSessionNotificationBase) String() string {
+	retval := fmt.Sprintf("Session %s: %s", snb.SessionID, snb.NotificationType)
+	return retval
+}
+
 type ideRunSessionProcessChangedNotification struct {
 	ideSessionNotificationBase
 	PID int64 `json:"pid,omitempty"`
@@ -29,17 +34,8 @@ type ideRunSessionTerminatedNotification struct {
 
 type ideSessionLogNotification struct {
 	ideSessionNotificationBase
-	IsStdErr   bool   `json:"is_std_err"`
+	IsStdErr   bool   `json:"is_std_err,omitempty"`
 	LogMessage string `json:"log_message"`
-}
-
-func (pcn *ideRunSessionProcessChangedNotification) ToString() string {
-	maybePID := ""
-	if pcn.PID != 0 {
-		maybePID = fmt.Sprintf(" (PID: %d)", pcn.PID)
-	}
-	retval := fmt.Sprintf("Session %s: %s%s", pcn.SessionID, pcn.NotificationType, maybePID)
-	return retval
 }
 
 type EnvVar struct {

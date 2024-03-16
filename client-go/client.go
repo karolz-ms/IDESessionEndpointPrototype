@@ -38,7 +38,7 @@ func getSignalContext() context.Context {
 }
 
 var serverAddress string
-var 
+var sensitivePayloadKey string
 
 func newRootCommand() *cobra.Command {
 	rootCmd := &cobra.Command{
@@ -54,17 +54,13 @@ func newRootCommand() *cobra.Command {
 		panic(err)
 	}
 
+	rootCmd.Flags().StringVarP(&sensitivePayloadKey, "payloadKey", "", "", "base64-encoded key to encrypt sensitive payload data with. If not provided, sensitive payload data will not be encrypted.")
+
 	return rootCmd
 }
 
 func runClient(cmd *cobra.Command, _ []string) error {
 	client := http.Client{}
-
-	req, err := http.NewRequest("GET", "http://"+serverAddress+"/server_info", nil)
-	if err != nil {
-		return fmt.Errorf("Error creating server info request: %w", err)
-	}
-	// In real life we would send an 
 
 	vsr := VsSessionRequest{
 		ProjectPath: "/code/myap/src/service1/service1.csproj",
@@ -114,16 +110,32 @@ func runClient(cmd *cobra.Command, _ []string) error {
 			fmt.Println("Session update connection closed")
 			return nil
 		case websocket.TextMessage:
-			var scn VsSessionChangeNotification
-			err = json.Unmarshal(msg, &scn)
+			var basicNotification ideSessionNotificationBase
+			err = json.Unmarshal(msg, &basicNotification)
 			if err != nil {
 				return fmt.Errorf("Error parsing session update: %w", err)
 			}
 
-			fmt.Println(scn.ToString())
-			if scn.NotificationType == NotificationTypeSessionTerminated {
+			fmt.Println(basicNotification.String())
+			if basicNotification.NotificationType == notificationTypeSessionTerminated {
 				fmt.Println("Session terminated")
 				return nil
+			}
+
+			if basicNotification.NotificationType == notificationTypeServiceLogs {
+				var logNotification ideSessionLogNotification
+				err = json.Unmarshal(msg, &logNotification)
+				if err != nil {
+					return fmt.Errorf("Error parsing log notification: %w", err)
+				}
+
+				var logSource string
+				if logNotification.IsStdErr {
+					logSource = "stderr"
+				} else {
+					logSource = "stdout"
+				}
+				fmt.Printf("Log (%s): %s\n", logSource, logNotification.LogMessage)
 			}
 		default:
 			return fmt.Errorf("Unexpected message type received from session update endpoint: %d", msgType)
