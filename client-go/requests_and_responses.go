@@ -73,10 +73,3 @@ type encryptedPayload struct {
 	// are concatenated, then the signature is computed over the result using HMACSHA256 algorithm..
 	AuthenticationTag string `json:"authentication_tag"`
 }
-
-func (ep *encryptedPayload) Payload() ([]byte, error) {
-	// TODO: Implement this method
-	// Verify signature
-	// Decrypt payload
-	return nil, nil
-}

@@ -4,7 +4,7 @@ using VsSessionServer;
 var builder = WebApplication.CreateSlimBuilder(args);
 
 var app = builder.Build();
-var payloadProtection = args.Length > 1 && args[1] == "--payloadProtection";
+var payloadProtection = args.Length >= 1 && args[0] == "--payloadProtection";
 var sessionServer = new Server(payloadProtection);
 
 app.MapGet("/", () => "Visual Studio run session server");

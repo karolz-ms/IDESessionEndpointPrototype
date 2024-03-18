@@ -45,9 +45,10 @@ public class Server
             this.aes.Mode = CipherMode.CBC;
             this.aes.KeySize = 128;
             this.aes.Padding = PaddingMode.PKCS7;
+            this.aes.GenerateKey();
             this.hmac = new HMACSHA256();
-            Console.WriteLine($"Using payload encryption key {Convert.ToBase64String(this.aes.Key)}");
-            Console.WriteLine($"Using payload signing key {Convert.ToBase64String(this.hmac.Key)}");
+            Console.WriteLine($"Set payload encryption key $env:DEBUG_SESSION_PAYLOAD_ENCRYPTION_KEY=\"{Convert.ToBase64String(this.aes.Key)}\"");
+            Console.WriteLine($"Set payload signing key $env:DEBUG_SESSION_PAYLOAD_SIGNING_KEY=\"{Convert.ToBase64String(this.hmac.Key)}\"");
         }
     }
 

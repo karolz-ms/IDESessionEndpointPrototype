@@ -151,7 +151,8 @@ func runClient(cmd *cobra.Command, _ []string) error {
 					return fmt.Errorf("Error decrypting protected notification: %w", err)
 				}
 
-				err = json.Unmarshal(decryptedData, &basicNotification)
+				msg = decryptedData
+				err = json.Unmarshal(msg, &basicNotification)
 				if err != nil {
 					return fmt.Errorf("Error parsing decrypted notification: %w", err)
 				}
@@ -185,21 +186,24 @@ func runClient(cmd *cobra.Command, _ []string) error {
 }
 
 func initCrypto() error {
-	if os.Getenv(payloadEncryptionKeyEnvVar) != "" {
-		key, err := base64.StdEncoding.DecodeString(os.Getenv(payloadEncryptionKeyEnvVar))
-		if err != nil {
-			return fmt.Errorf("Error decoding %s: %w", payloadEncryptionKeyEnvVar, err)
-		}
+	var decodeErr error
 
-		payloadEncryptionKey = key
+	encodedPayloadEncryptionKey := os.Getenv(payloadEncryptionKeyEnvVar)
+	if encodedPayloadEncryptionKey != "" {
+		payloadEncryptionKey, decodeErr = base64.StdEncoding.AppendDecode(nil, []byte(encodedPayloadEncryptionKey))
+		if decodeErr != nil {
+			payloadEncryptionKey = nil
+			return fmt.Errorf("Error decoding %s: %w", payloadEncryptionKeyEnvVar, decodeErr)
+		}
 	}
-	if os.Getenv(payloadSigningKeyEnvVar) != "" {
-		key, err := base64.StdEncoding.DecodeString(os.Getenv(payloadSigningKeyEnvVar))
-		if err != nil {
-			return fmt.Errorf("Error decoding %s: %w", payloadSigningKeyEnvVar, err)
-		}
 
-		payloadEncryptionKey = key
+	encodedPayloadSigningKey := os.Getenv(payloadSigningKeyEnvVar)
+	if encodedPayloadSigningKey != "" {
+		payloadSigningKey, decodeErr = base64.StdEncoding.AppendDecode(nil, []byte(encodedPayloadSigningKey))
+		if decodeErr != nil {
+			payloadSigningKey = nil
+			return fmt.Errorf("Error decoding %s: %w", payloadSigningKeyEnvVar, decodeErr)
+		}
 	}
 
 	var cryptoErr error
@@ -232,6 +236,7 @@ func protectIfNecessary(data []byte) ([]byte, error) {
 	encrypter.CryptBlocks(ciphertext, paddedData)
 
 	hmacSha256 := hmac.New(sha256.New, payloadSigningKey)
+	hmacSha256.Write(ivAndCiphertext)
 	authenticationTag := hmacSha256.Sum(nil)
 
 	ep := encryptedPayload{
@@ -241,4 +246,44 @@ func protectIfNecessary(data []byte) ([]byte, error) {
 	}
 
 	return json.Marshal(ep)
+}
+
+func (ep *encryptedPayload) Decrypt() ([]byte, error) {
+	iv, err := base64.StdEncoding.AppendDecode(nil, []byte(ep.InitializationVector))
+	if err != nil {
+		return nil, fmt.Errorf("Error decoding IV: %w", err)
+	}
+
+	ciphertext, err := base64.StdEncoding.AppendDecode(nil, []byte(ep.Ciphertext))
+	if err != nil {
+		return nil, fmt.Errorf("Error decoding ciphertext: %w", err)
+	}
+	if len(ciphertext) < aes.BlockSize || len(ciphertext)%aes.BlockSize != 0 {
+		return nil, fmt.Errorf("Invalid ciphertext length: %d", len(ciphertext))
+	}
+
+	authenticationTag, err := base64.StdEncoding.AppendDecode(nil, []byte(ep.AuthenticationTag))
+	if err != nil {
+		return nil, fmt.Errorf("Error decoding authentication tag: %w", err)
+	}
+
+	ivAndCiphertext := make([]byte, len(iv)+len(ciphertext))
+	copy(ivAndCiphertext, iv)
+	copy(ivAndCiphertext[len(iv):], ciphertext)
+
+	hmacSha256 := hmac.New(sha256.New, payloadSigningKey)
+	hmacSha256.Write(ivAndCiphertext)
+	expectedTag := hmacSha256.Sum(nil)
+	if !hmac.Equal(expectedTag, authenticationTag) {
+		return nil, fmt.Errorf("Authentication tag mismatch, the payload has been tampered with")
+	}
+
+	decrypter := cipher.NewCBCDecrypter(aesAlg, iv)
+	decryptedData := make([]byte, len(ciphertext))
+	decrypter.CryptBlocks(decryptedData, ciphertext)
+	unpaddedData, err := Pkcs7UnPad(decryptedData)
+	if err != nil {
+		return nil, fmt.Errorf("Error un-padding decrypted data: %w", err)
+	}
+	return unpaddedData, nil
 }
