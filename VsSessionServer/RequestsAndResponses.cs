@@ -10,6 +10,7 @@ public static class NotificationTypes
     public static readonly string ProcessRestarted = "processRestarted";
     public static readonly string SessionTerminated = "sessionTerminated";
     public static readonly string ServiceLogs = "serviceLogs";
+    public static readonly string ProtectedNotification = "protected";
 }
 
 public class VsSessionNotification
@@ -51,6 +52,16 @@ public class  ServiceLogsNotification : VsSessionNotification
 
     [JsonPropertyName("log_message")]
     public string LogMessage { get; set; } = string.Empty;
+}
+
+public class ProtectedNotification : VsSessionNotification
+{
+    [JsonPropertyName("notification_type")]
+    public override string NotificationType => NotificationTypes.ProtectedNotification;
+
+    [Required]
+    [JsonPropertyName("data")]
+    public EncryptedPayload Data { get; set; }
 }
 
 public class EnvVar
@@ -132,6 +143,14 @@ public class EncryptedPayload
     [Required]
     [JsonPropertyName("iv")]
     public string InitializationVector { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The base64-encoded authentication tag (signature) of the payload.
+    /// To compute the signature, (un-encoded) initialization vector and ciphertext
+    /// are concatenated, then the signature is computed over the result using HMACSHA256 algorithm..
+    [Required]
+    [JsonPropertyName("authentication_tag")]
+    public string AuthenticationTag { get; set; } = string.Empty;
 }
 
 

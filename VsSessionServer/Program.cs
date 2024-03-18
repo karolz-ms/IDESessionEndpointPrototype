@@ -4,8 +4,8 @@ using VsSessionServer;
 var builder = WebApplication.CreateSlimBuilder(args);
 
 var app = builder.Build();
-var encryptSensitivePayloads = args.Length > 1 && args[1] == "--encryptSensitivePayloads;";
-var sessionServer = new Server(encryptSensitivePayloads);
+var payloadProtection = args.Length > 1 && args[1] == "--payloadProtection";
+var sessionServer = new Server(payloadProtection);
 
 app.MapGet("/", () => "Visual Studio run session server");
 
