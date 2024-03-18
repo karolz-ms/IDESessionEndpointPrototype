@@ -3,6 +3,12 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -37,8 +43,17 @@ func getSignalContext() context.Context {
 	return ctx
 }
 
-var serverAddress string
-var sensitivePayloadKey string
+var (
+	serverAddress        string
+	payloadEncryptionKey []byte
+	payloadSigningKey    []byte
+	aesAlg               cipher.Block
+)
+
+const (
+	payloadEncryptionKeyEnvVar = "DEBUG_SESSION_PAYLOAD_ENCRYPTION_KEY"
+	payloadSigningKeyEnvVar    = "DEBUG_SESSION_PAYLOAD_SIGNING_KEY"
+)
 
 func newRootCommand() *cobra.Command {
 	rootCmd := &cobra.Command{
@@ -54,12 +69,15 @@ func newRootCommand() *cobra.Command {
 		panic(err)
 	}
 
-	rootCmd.Flags().StringVarP(&sensitivePayloadKey, "payloadKey", "", "", "base64-encoded key to encrypt sensitive payload data with. If not provided, sensitive payload data will not be encrypted.")
-
 	return rootCmd
 }
 
 func runClient(cmd *cobra.Command, _ []string) error {
+	err := initCrypto()
+	if err != nil {
+		return err
+	}
+
 	client := http.Client{}
 
 	vsr := VsSessionRequest{
@@ -70,6 +88,11 @@ func runClient(cmd *cobra.Command, _ []string) error {
 	vsr.Env = append(vsr.Env, EnvVar{Name: "REDIS_SERVICE_PORT", Value: "6379"})
 	vsr.Arguments = append(vsr.Arguments, "--verbosity=2")
 	vsrBody, err := json.Marshal(vsr)
+	if err != nil {
+		return err
+	}
+
+	vsrBody, err = protectIfNecessary(vsrBody)
 	if err != nil {
 		return err
 	}
@@ -116,6 +139,24 @@ func runClient(cmd *cobra.Command, _ []string) error {
 				return fmt.Errorf("Error parsing session update: %w", err)
 			}
 
+			if basicNotification.NotificationType == notificationTypeProtected {
+				var protectedNotification ideSessionProtectedNotification
+				err = json.Unmarshal(msg, &protectedNotification)
+				if err != nil {
+					return fmt.Errorf("Error parsing protected notification: %w", err)
+				}
+
+				decryptedData, err := protectedNotification.Data.Decrypt()
+				if err != nil {
+					return fmt.Errorf("Error decrypting protected notification: %w", err)
+				}
+
+				err = json.Unmarshal(decryptedData, &basicNotification)
+				if err != nil {
+					return fmt.Errorf("Error parsing decrypted notification: %w", err)
+				}
+			}
+
 			fmt.Println(basicNotification.String())
 			if basicNotification.NotificationType == notificationTypeSessionTerminated {
 				fmt.Println("Session terminated")
@@ -141,4 +182,63 @@ func runClient(cmd *cobra.Command, _ []string) error {
 			return fmt.Errorf("Unexpected message type received from session update endpoint: %d", msgType)
 		}
 	}
+}
+
+func initCrypto() error {
+	if os.Getenv(payloadEncryptionKeyEnvVar) != "" {
+		key, err := base64.StdEncoding.DecodeString(os.Getenv(payloadEncryptionKeyEnvVar))
+		if err != nil {
+			return fmt.Errorf("Error decoding %s: %w", payloadEncryptionKeyEnvVar, err)
+		}
+
+		payloadEncryptionKey = key
+	}
+	if os.Getenv(payloadSigningKeyEnvVar) != "" {
+		key, err := base64.StdEncoding.DecodeString(os.Getenv(payloadSigningKeyEnvVar))
+		if err != nil {
+			return fmt.Errorf("Error decoding %s: %w", payloadSigningKeyEnvVar, err)
+		}
+
+		payloadEncryptionKey = key
+	}
+
+	var cryptoErr error
+	aesAlg, cryptoErr = aes.NewCipher(payloadEncryptionKey)
+	if cryptoErr != nil {
+		return fmt.Errorf("Error creating AES cipher: %w", cryptoErr)
+	}
+
+	return nil
+}
+
+func protectIfNecessary(data []byte) ([]byte, error) {
+	if len(payloadEncryptionKey) == 0 {
+		return data, nil
+	}
+
+	paddedData, err := Pkcs7Pad(data, aes.BlockSize)
+	if err != nil {
+		return nil, err
+	}
+
+	ivAndCiphertext := make([]byte, aes.BlockSize+len(paddedData))
+	iv := ivAndCiphertext[:aes.BlockSize]
+	ciphertext := ivAndCiphertext[aes.BlockSize:]
+	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+		return nil, fmt.Errorf("Error generating IV: %w", err)
+	}
+
+	encrypter := cipher.NewCBCEncrypter(aesAlg, iv)
+	encrypter.CryptBlocks(ciphertext, paddedData)
+
+	hmacSha256 := hmac.New(sha256.New, payloadSigningKey)
+	authenticationTag := hmacSha256.Sum(nil)
+
+	ep := encryptedPayload{
+		Ciphertext:           base64.StdEncoding.EncodeToString(ciphertext),
+		InitializationVector: base64.StdEncoding.EncodeToString(iv),
+		AuthenticationTag:    base64.StdEncoding.EncodeToString(authenticationTag),
+	}
+
+	return json.Marshal(ep)
 }

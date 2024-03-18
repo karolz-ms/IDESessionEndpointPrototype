@@ -10,6 +10,7 @@ const (
 	notificationTypeProcessRestarted  notificationType = "processRestarted"
 	notificationTypeSessionTerminated notificationType = "sessionTerminated"
 	notificationTypeServiceLogs       notificationType = "serviceLogs"
+	notificationTypeProtected         notificationType = "protected"
 )
 
 type ideSessionNotificationBase struct {
@@ -38,6 +39,11 @@ type ideSessionLogNotification struct {
 	LogMessage string `json:"log_message"`
 }
 
+type ideSessionProtectedNotification struct {
+	ideSessionNotificationBase
+	Data encryptedPayload `json:"data"`
+}
+
 type EnvVar struct {
 	// Name of the environment variable
 	Name string `json:"name"`
@@ -55,6 +61,22 @@ type VsSessionRequest struct {
 	Arguments   []string `json:"args,omitempty"`
 }
 
-type VsServerInfo struct {
-	IdentityToken string `json:"identity_token"`
+type encryptedPayload struct {
+	// The AES-encrypted, base64-encoded payload.
+	Ciphertext string `json:"ciphertext"`
+
+	// The base64-encoded initialization vector for the encryption algorithm.
+	InitializationVector string `json:"iv"`
+
+	// The base64-encoded authentication tag (signature) of the payload.
+	// To compute the signature, (un-encoded) initialization vector and ciphertext
+	// are concatenated, then the signature is computed over the result using HMACSHA256 algorithm..
+	AuthenticationTag string `json:"authentication_tag"`
+}
+
+func (ep *encryptedPayload) Payload() ([]byte, error) {
+	// TODO: Implement this method
+	// Verify signature
+	// Decrypt payload
+	return nil, nil
 }
