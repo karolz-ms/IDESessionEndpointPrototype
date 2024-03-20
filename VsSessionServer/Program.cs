@@ -11,9 +11,7 @@ app.MapGet("/", () => "Visual Studio run session server");
 
 var runSessionApi = app.MapGroup("/run_session");
 
-// The cast is necessary, otherwise the result is ignored
-// See https://learn.microsoft.com/en-us/aspnet/core/diagnostics/asp0016?view=aspnetcore-8.0 for details.
-runSessionApi.MapPut("/", (System.Delegate) sessionServer.SessionPut);
+runSessionApi.MapPut("/", sessionServer.SessionPut);
 
 runSessionApi.Map("/notify", sessionServer.SessionNotify);
 

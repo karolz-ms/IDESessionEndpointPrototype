@@ -14,8 +14,6 @@
                 "-s", "localhost:5213"
             ],
             "env": {
-                "DEBUG_SESSION_PAYLOAD_ENCRYPTION_KEY": "put your base64 encoded payload encryption key here",
-                "DEBUG_SESSION_PAYLOAD_SIGNING_KEY": "put your base64 encoded payload signing key here",
             }
         }
     ]

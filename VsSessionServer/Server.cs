@@ -33,22 +33,13 @@ public class Server
     private Random random = new Random();
     private List<RunSessionSubscription> subscriptions = new List<RunSessionSubscription>();
     private readonly bool payloadProtection;
-    private readonly Aes? aes;
-    private readonly HMACSHA256? hmac;
 
     public Server(bool payloadProtection = false)
     {
         this.payloadProtection = payloadProtection;
         if (this.payloadProtection)
         {
-            this.aes = Aes.Create();
-            this.aes.Mode = CipherMode.CBC;
-            this.aes.KeySize = 128;
-            this.aes.Padding = PaddingMode.PKCS7;
-            this.aes.GenerateKey();
-            this.hmac = new HMACSHA256();
-            Console.WriteLine($"Set payload encryption key $env:DEBUG_SESSION_PAYLOAD_ENCRYPTION_KEY=\"{Convert.ToBase64String(this.aes.Key)}\"");
-            Console.WriteLine($"Set payload signing key $env:DEBUG_SESSION_PAYLOAD_SIGNING_KEY=\"{Convert.ToBase64String(this.hmac.Key)}\"");
+            // TODO: generate certs and keys
         }
     }
 
@@ -59,20 +50,14 @@ public class Server
         }
     };
 
-    public async Task<Results<Created<string>, ProblemHttpResult>> SessionPut(HttpContext context)
+    public Results<Created<string>, ProblemHttpResult> SessionPut(HttpContext context)
     {
         if (!context.Request.HasJsonContentType())
         {
             return TypedResults.Problem("Request must have application/json content type", null, StatusCodes.Status415UnsupportedMediaType);
         }
 
-        var (payload, problem) = TryGetRequestPayloadAsync(context);
-        if (problem is not null)
-        {
-            return problem;
-        }
-
-        var sr = JsonSerializer.Deserialize<VsSessionRequest>(payload, jsonSerializerOpts);
+        var sr = JsonSerializer.Deserialize<VsSessionRequest>(context.Request.BodyReader.AsStream(), jsonSerializerOpts);
         if (sr is null)
         {
             return TypedResults.Problem("Request body could not be deserialized", null, StatusCodes.Status400BadRequest);
@@ -233,71 +218,9 @@ public class Server
         }
     }
 
-    private (byte[], ProblemHttpResult?) TryGetRequestPayloadAsync(HttpContext context)
-    {
-        if (this.payloadProtection)
-        {
-            var encryptedPayload = JsonSerializer.Deserialize<EncryptedPayload>(context.Request.BodyReader.AsStream(), jsonSerializerOpts);
-            if (encryptedPayload is null)
-            {
-                return ([], TypedResults.Problem("Request body could not be deserialized", null, StatusCodes.Status400BadRequest));
-            }
-
-            var ciphertext = Convert.FromBase64String(encryptedPayload.Ciphertext);
-            var iv = Convert.FromBase64String(encryptedPayload.InitializationVector);
-
-            // First check the signature.
-            var ivAndCiphertext = new byte[iv.Length + ciphertext.Length];
-            iv.CopyTo(ivAndCiphertext, 0);
-            ciphertext.CopyTo(ivAndCiphertext, iv.Length);
-            var signature = this.hmac!.ComputeHash(ivAndCiphertext);
-            var authenticationTag = Convert.FromBase64String(encryptedPayload.AuthenticationTag);
-            if (!signature.SequenceEqual(authenticationTag))
-            {
-                return ([], TypedResults.Problem("Encrypted payload signature is invalid", null, StatusCodes.Status400BadRequest));
-            }
-
-            // Signature checks out, decrypt the payload.
-            var payload = this.aes!.DecryptCbc(ciphertext, iv, PaddingMode.PKCS7);
-            return (payload, null);
-        }
-        else
-        {
-            var ms = new MemoryStream();
-            context.Request.Body.CopyTo(ms);
-            return (ms.ToArray(), null);
-        }
-    }
-
     private byte[] GetChangeNotificationBytes<CT>(CT change) where CT: VsSessionNotification
     {
         var serializedChange = JsonSerializer.SerializeToUtf8Bytes<CT>(change, jsonSerializerOpts);
-        if (!this.payloadProtection || change is ProtectedNotification)
-        {
-            return serializedChange;
-        }
-
-        this.aes!.GenerateIV();
-        var iv = this.aes.IV;
-        var ciphertext = this.aes!.EncryptCbc(serializedChange, iv);
-
-        var ivAndCiphertext = new byte[iv.Length + ciphertext.Length];
-        iv.CopyTo(ivAndCiphertext, 0);
-        ciphertext.CopyTo(ivAndCiphertext, iv.Length);
-        var signature = this.hmac!.ComputeHash(ivAndCiphertext);
-
-        var payload = new EncryptedPayload
-        {
-            Ciphertext = Convert.ToBase64String(ciphertext),
-            InitializationVector = Convert.ToBase64String(iv),
-            AuthenticationTag = Convert.ToBase64String(signature)
-        };
-        
-        var pn = new ProtectedNotification
-        {
-            Data = payload
-        };
-        var serializedPN = JsonSerializer.SerializeToUtf8Bytes<ProtectedNotification>(pn, jsonSerializerOpts);
-        return serializedPN;
+        return serializedChange;
     }
 }
