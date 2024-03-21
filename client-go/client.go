@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -60,6 +62,38 @@ func newRootCommand() *cobra.Command {
 
 func runClient(cmd *cobra.Command, _ []string) error {
 	client := http.Client{}
+	wsDialer := websocket.DefaultDialer
+	uriScheme := "http"
+	webSocketScheme := "ws"
+
+	serverCertFilePath := os.Getenv("DEBUG_SESSION_SERVER_CERT_FILE")
+	if serverCertFilePath != "" {
+		certBytes, err := os.ReadFile(serverCertFilePath)
+		if err != nil {
+			return fmt.Errorf("Error reading server certificate file: %w", err)
+		}
+
+		cert, err := x509.ParseCertificate(certBytes)
+		if err != nil {
+			return fmt.Errorf("Error parsing server certificate: %w", err)
+		}
+
+		caCertPool := x509.NewCertPool()
+		caCertPool.AddCert(cert)
+		tlsConfig := &tls.Config{
+			RootCAs: caCertPool,
+		}
+		client = http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: tlsConfig,
+			},
+		}
+		wsDialer = &websocket.Dialer{
+			TLSClientConfig: tlsConfig,
+		}
+		uriScheme = "https"
+		webSocketScheme = "wss"
+	}
 
 	vsr := VsSessionRequest{
 		ProjectPath: "/code/myap/src/service1/service1.csproj",
@@ -73,7 +107,11 @@ func runClient(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	req, err := http.NewRequest("PUT", "http://"+serverAddress+"/run_session", bytes.NewBuffer(vsrBody))
+	req, err := http.NewRequest(
+		"PUT",
+		fmt.Sprintf("%s://%s/run_session", uriScheme, serverAddress),
+		bytes.NewBuffer(vsrBody),
+	)
 	if err != nil {
 		return fmt.Errorf("Error creating new session request: %w", err)
 	}
@@ -92,7 +130,7 @@ func runClient(cmd *cobra.Command, _ []string) error {
 
 	fmt.Println("New session started successfully")
 
-	socket, _, err := websocket.DefaultDialer.Dial("ws://"+serverAddress+"/run_session/notify", nil)
+	socket, _, err := wsDialer.Dial(fmt.Sprintf("%s://%s/run_session/notify", webSocketScheme, serverAddress), nil)
 	if err != nil {
 		return fmt.Errorf("Error connecting to session update endpoint: %w", err)
 	}

@@ -2,18 +2,13 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Security.Cryptography;
 using System.Linq;
 using System.Net.WebSockets;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Text;
-using System.IO;
 using Microsoft.AspNetCore.Http.HttpResults;
-using System.Runtime.CompilerServices;
-using System.Diagnostics;
 
 namespace VsSessionServer;
 
@@ -32,16 +27,6 @@ public class Server
     private ConcurrentDictionary<string, RunSessionState> sessions = new ConcurrentDictionary<string, RunSessionState>();
     private Random random = new Random();
     private List<RunSessionSubscription> subscriptions = new List<RunSessionSubscription>();
-    private readonly bool payloadProtection;
-
-    public Server(bool payloadProtection = false)
-    {
-        this.payloadProtection = payloadProtection;
-        if (this.payloadProtection)
-        {
-            // TODO: generate certs and keys
-        }
-    }
 
     private static JsonSerializerOptions jsonSerializerOpts = new JsonSerializerOptions {
         Converters =

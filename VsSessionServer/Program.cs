@@ -1,21 +1,43 @@
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using VsSessionServer;
+using System.IO;
+using System;
 
 var builder = WebApplication.CreateSlimBuilder(args);
 
-var app = builder.Build();
-var payloadProtection = args.Length >= 1 && args[0] == "--payloadProtection";
-var sessionServer = new Server(payloadProtection);
+var (publicCertFilePath, privateCertFilePath, certPassword) = CertGenerator.GenerateCertFiles();
 
-app.MapGet("/", () => "Visual Studio run session server");
+try {
+    Console.WriteLine($"Public cert file path  $env:DEBUG_SESSION_SERVER_CERT_FILE=\"{publicCertFilePath}\"");
+    Console.WriteLine($"Private cert file path: {privateCertFilePath}");
 
-var runSessionApi = app.MapGroup("/run_session");
+    builder.WebHost.ConfigureKestrel(kestrelOptions =>
+    {
+        kestrelOptions.ListenLocalhost(5213, listenOptions => {
+            listenOptions.UseHttps(privateCertFilePath, certPassword);
+        });
+    });
 
-runSessionApi.MapPut("/", sessionServer.SessionPut);
+    var app = builder.Build();
+    var sessionServer = new Server();
 
-runSessionApi.Map("/notify", sessionServer.SessionNotify);
+    app.MapGet("/", () => "Visual Studio run session server");
 
-app.UseWebSockets();
+    var runSessionApi = app.MapGroup("/run_session");
 
-app.Run();
+    runSessionApi.MapPut("/", sessionServer.SessionPut);
+
+    runSessionApi.Map("/notify", sessionServer.SessionNotify);
+
+    app.UseWebSockets();
+
+    app.Run();
+}
+finally
+{
+    File.Delete(publicCertFilePath);
+    File.Delete(privateCertFilePath);
+}
+
 
