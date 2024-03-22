@@ -9,6 +9,26 @@ public static class CertGenerator
 {
     public static (string publicCertFilePath, string privateCertFilePath, string certPassword) GenerateCertFiles()
     {
+        var cert = GenerateCert();
+
+        string randomFileName()
+        {
+            return PasswordGenerator.Generate(24, true, true, true, false, 0, 0, 0, 0);
+        }
+
+        byte[] publicKeyCertData = cert.Export(X509ContentType.Cert);
+        var publicCertFilePath = Path.Combine(Path.GetTempPath(), $"{randomFileName()}.cer");
+        File.WriteAllBytes(publicCertFilePath, publicKeyCertData);
+
+        string certPassword = PasswordGenerator.Generate(24, true, true, true, true, 0, 0, 0, 0);
+        byte[] privateKeyCertData = cert.Export(X509ContentType.Pfx, certPassword);
+        var privateCertFilePath = Path.Combine(Path.GetTempPath(), $"{randomFileName()}.pfx");
+        File.WriteAllBytes(privateCertFilePath, privateKeyCertData);
+        return (publicCertFilePath, privateCertFilePath, certPassword);
+    }
+
+    public static X509Certificate2 GenerateCert()
+    {
         const int rsaKeySize = 2048;
         var rsa = RSA.Create(rsaKeySize); // Create asymmetric RSA key pair.
         var req = new CertificateRequest(
@@ -27,19 +47,6 @@ public static class CertGenerator
             DateTimeOffset.UtcNow.AddDays(7)
         );
 
-        string randomFileName()
-        {
-            return PasswordGenerator.Generate(24, true, true, true, false, 0, 0, 0, 0);
-        }
-
-        byte[] publicKeyCertData = cert.Export(X509ContentType.Cert);
-        var publicCertFilePath = Path.Combine(Path.GetTempPath(), $"{randomFileName()}.cer");
-        File.WriteAllBytes(publicCertFilePath, publicKeyCertData);
-
-        string certPassword = PasswordGenerator.Generate(24, true, true, true, true, 0, 0, 0, 0);
-        byte[] privateKeyCertData = cert.Export(X509ContentType.Pfx, certPassword);
-        var privateCertFilePath = Path.Combine(Path.GetTempPath(), $"{randomFileName()}.pfx");
-        File.WriteAllBytes(privateCertFilePath, privateKeyCertData);
-        return (publicCertFilePath, privateCertFilePath, certPassword);
+        return cert;
     }
 }

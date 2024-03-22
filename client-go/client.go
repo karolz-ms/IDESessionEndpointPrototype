@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -65,14 +66,26 @@ func runClient(cmd *cobra.Command, _ []string) error {
 	wsDialer := websocket.DefaultDialer
 	uriScheme := "http"
 	webSocketScheme := "ws"
+	var certBytes []byte
+	var err error
+
+	serverCertEncodedBytes := os.Getenv("DEBUG_SESSION_SERVER_CERT")
+	if serverCertEncodedBytes != "" {
+		certBytes, err = base64.StdEncoding.AppendDecode(nil, []byte(serverCertEncodedBytes))
+		if err != nil {
+			return fmt.Errorf("Error reading server certificate: %w", err)
+		}
+	}
 
 	serverCertFilePath := os.Getenv("DEBUG_SESSION_SERVER_CERT_FILE")
 	if serverCertFilePath != "" {
-		certBytes, err := os.ReadFile(serverCertFilePath)
+		certBytes, err = os.ReadFile(serverCertFilePath)
 		if err != nil {
 			return fmt.Errorf("Error reading server certificate file: %w", err)
 		}
+	}
 
+	if len(certBytes) > 0 {
 		cert, err := x509.ParseCertificate(certBytes)
 		if err != nil {
 			return fmt.Errorf("Error parsing server certificate: %w", err)

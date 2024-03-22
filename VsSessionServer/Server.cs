@@ -9,6 +9,7 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Mvc;
 
 namespace VsSessionServer;
 
@@ -35,19 +36,8 @@ public class Server
         }
     };
 
-    public Results<Created<string>, ProblemHttpResult> SessionPut(HttpContext context)
+    public Results<Created<string>, ProblemHttpResult> SessionPut(HttpContext context, [FromBody] VsSessionRequest sr)
     {
-        if (!context.Request.HasJsonContentType())
-        {
-            return TypedResults.Problem("Request must have application/json content type", null, StatusCodes.Status415UnsupportedMediaType);
-        }
-
-        var sr = JsonSerializer.Deserialize<VsSessionRequest>(context.Request.BodyReader.AsStream(), jsonSerializerOpts);
-        if (sr is null)
-        {
-            return TypedResults.Problem("Request body could not be deserialized", null, StatusCodes.Status400BadRequest);
-        }
-
         string sessionId = NewSessionId();
         var rss = new RunSessionState { 
             SessionId = sessionId,
